@@ -10,12 +10,13 @@ from sklearn.preprocessing import LabelBinarizer
 from sklearn.pipeline import Pipeline
 from math import ceil
 import operator
+import h5py
 
-"""
-One-hot-encode a word.
-Return an array of 26*max_len, each 26 items representing a letter.
-"""
 def encode_word(max_len, word):
+    """
+    One-hot-encode a word.
+    Return an array of 26*max_len, each 26 items representing a letter.
+    """
     ret = [0] * max_len * 26
     count = 0
     for letter in word:
@@ -23,10 +24,10 @@ def encode_word(max_len, word):
         count += 1
     return ret
 
-"""
-one-hot-encode a single integer value
-"""
 def one_hot(size, idx):
+    """
+    one-hot-encode a single integer value
+    """
     ret = [0] * size
     ret[idx] = 1
     return ret
@@ -55,15 +56,6 @@ with open('nomi.txt') as f:
             all_Y[words[1]] = len(all_Y)
 print("Loaded data. max_X = {}, classes={}\n".format(max_X, len(all_Y)))
 
-"""
-# encode class values as integers
-encoder = LabelBinarizer()
-encoder.fit(Y)
-encoded_Y = encoder.transform(Y)
-# convert integers to dummy variables (i.e. one hot encoded)
-dummy_y = np_utils.to_categorical(encoded_Y)
-"""
-
 model = Sequential([
     Dense(len(all_Y), input_dim=max_X * 26),
     Activation('relu'),
@@ -75,24 +67,21 @@ model.compile(optimizer='rmsprop',
     loss='categorical_crossentropy',
     metrics=['accuracy'])
 
-batch_size = 100
-stop_at = None
-for i in range(0, ceil(len(X)/batch_size)):
-    print("Batch {} of {}...\n".format(i, ceil(len(X)/batch_size)))
-    # prepare inputs and outputs
-    raw_in = X[(i*batch_size) : ((i+1) * batch_size)]
-    enc_in = [ encode_word(max_X, x) for x in raw_in ]
+def generate_training_set(model, stop):
+    for i in range(0, min(stop, len(X))):
+        # stop sooner to allow debugging ...
+        if i == stop:
+            break
+        if i > 0 and 0 == i % 5000:
+            print("Batch {} of {}...".format(i, len(X)))
+            model.save("nomi.h5")
+        enc_in = numpy.array([encode_word(max_X, X[i])])
+        enc_out = numpy.array([one_hot(len(all_Y), all_Y[Y[i]])])
+        yield({'dense_1_input': enc_in}, {'activation_2': enc_out})
 
-    raw_out = Y[(i*batch_size) : ((i+1) * batch_size)]
-    enc_out = [ one_hot(len(all_Y), all_Y[y]) for y in raw_out ]
-
-    # train on batch
-    #model.fit(enc_in, enc_out, epochs=10, batch_size=batch_size)
-    model.train_on_batch(enc_in, enc_out)
-    model.save("nomi.h5")
-    # stop sooner to allow debugging ...
-    if i == stop_at:
-        break
+# train 
+stop_at = 100
+model.fit_generator(generate_training_set(model, stop_at), steps_per_epoch=min(stop_at, len(X)), epochs=1 if stop_at else 10)
 
 test_out = model.predict(numpy.array([encode_word(max_X, "PAVAROTTI")]))
 # iter results highest-first. there probably is a better way
