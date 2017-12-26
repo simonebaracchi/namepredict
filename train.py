@@ -8,7 +8,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.pipeline import Pipeline
-from math import ceil
+from math import ceil, inf
 import operator
 import h5py
 
@@ -59,6 +59,8 @@ print("Loaded data. max_X = {}, classes={}\n".format(max_X, len(all_Y)))
 model = Sequential([
     Dense(len(all_Y), input_dim=max_X * 26),
     Activation('relu'),
+    Dense(30),
+    Activation('softmax'),
     Dense(len(all_Y)),
     Activation('softmax'),
 ])
@@ -77,11 +79,13 @@ def generate_training_set(model, stop):
             model.save("nomi.h5")
         enc_in = numpy.array([encode_word(max_X, X[i])])
         enc_out = numpy.array([one_hot(len(all_Y), all_Y[Y[i]])])
-        yield({'dense_1_input': enc_in}, {'activation_2': enc_out})
+        yield({'dense_1_input': enc_in}, {'activation_3': enc_out})
 
 # train 
-stop_at = 100
-model.fit_generator(generate_training_set(model, stop_at), steps_per_epoch=min(stop_at, len(X)), epochs=1 if stop_at else 10)
+stop_at=inf
+epochs=10
+model.fit_generator(generate_training_set(model, stop_at), steps_per_epoch=min(stop_at, len(X))/epochs, epochs=epochs)
+model.save("nomi.h5")
 
 test_out = model.predict(numpy.array([encode_word(max_X, "PAVAROTTI")]))
 # iter results highest-first. there probably is a better way
