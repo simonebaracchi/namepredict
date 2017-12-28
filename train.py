@@ -4,6 +4,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Activation
 from keras.wrappers.scikit_learn import KerasClassifier
 from keras.utils import np_utils
+from keras.callbacks import ModelCheckpoint
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelBinarizer
@@ -45,7 +46,7 @@ all_Y = {}
 # input max length (used to reduce input size later)
 max_X = 0
 # load input+outputs from file. file format is "SURNAME NAME".
-with open('nomi.txt') as f:
+with open('names.txt') as f:
     total = f.readlines()
     for line in total:
         words = line.split()
@@ -59,8 +60,10 @@ print("Loaded data. max_X = {}, classes={}\n".format(max_X, len(all_Y)))
 model = Sequential([
     Dense(len(all_Y), input_dim=max_X * 26),
     Activation('relu'),
-    Dense(30),
-    Activation('softmax'),
+    Dense(60),
+    Activation('relu'),
+    Dense(60),
+    Activation('relu'),
     Dense(len(all_Y)),
     Activation('softmax'),
 ])
@@ -69,23 +72,37 @@ model.compile(optimizer='rmsprop',
     loss='categorical_crossentropy',
     metrics=['accuracy'])
 
-def generate_training_set(model, stop):
-    for i in range(0, min(stop, len(X))):
-        # stop sooner to allow debugging ...
-        if i == stop:
-            break
-        if i > 0 and 0 == i % 5000:
-            print("Batch {} of {}...".format(i, len(X)))
-            model.save("nomi.h5")
-        enc_in = numpy.array([encode_word(max_X, X[i])])
-        enc_out = numpy.array([one_hot(len(all_Y), all_Y[Y[i]])])
-        yield({'dense_1_input': enc_in}, {'activation_3': enc_out})
+def generate_training_set(model, batch_size):
+    # seems that generator must be infinitely iterable.
+    while True:
+        for i in range(0, int(len(X)/batch_size)):
+            raw_in = X[(i * batch_size) : ((i+1) * batch_size)]
+            enc_in = numpy.array([ encode_word(max_X, x) for x in raw_in ])
 
-# train 
+            raw_out = Y[(i * batch_size) : ((i+1) * batch_size)]
+            enc_out = numpy.array([ one_hot(len(all_Y), all_Y[y]) for y in raw_out ])
+
+            #enc_in = numpy.array([encode_word(max_X, X[i])])
+            #enc_out = numpy.array([one_hot(len(all_Y), all_Y[Y[i]])])
+            yield({'dense_1_input': enc_in}, {'activation_4': enc_out})
+
+# how many batches to train on (use a different value to stop earlier, for debug)
 stop_at=inf
+# how many iterations over data
 epochs=10
-model.fit_generator(generate_training_set(model, stop_at), steps_per_epoch=min(stop_at, len(X))/epochs, epochs=epochs)
-model.save("nomi.h5")
+# batch size... make it as big as possible for better performance maybe?
+batch_size=1000
+# save model at the end of each epoch
+checkpointer = ModelCheckpoint(filepath='names.h5', verbose=1, save_best_only=True)
+
+try:
+    model.fit_generator(generate_training_set(model, batch_size=batch_size), 
+            steps_per_epoch=min(stop_at, int(len(X)/batch_size)), 
+            callbacks=[checkpointer],
+            epochs=epochs)
+except StopIteration:
+    print("Iteration stopped")
+model.save("model.h5")
 
 test_out = model.predict(numpy.array([encode_word(max_X, "PAVAROTTI")]))
 # iter results highest-first. there probably is a better way
