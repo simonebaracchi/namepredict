@@ -27,20 +27,22 @@ def encode_word(max_len, word):
 
 def one_hot(size, idx):
     """
-    one-hot-encode a single integer value
+    one-hot-encode a single integer value or a list
     """
     ret = [0] * size
-    ret[idx] = 1
+    if type(idx) is list:
+        for i in idx:
+            ret[i] = 1
+    else:
+        ret[idx] = 1
     return ret
 
 
 seed = 7
 numpy.random.seed(seed)
 
-# last names (inputs)
-X = []
-# first names (outputs)
-Y = []
+# last names (inputs) => first names (output)
+X = {}
 # unique outputs (classes)
 all_Y = {}
 # input max length (used to reduce input size later)
@@ -50,19 +52,20 @@ with open('names.txt') as f:
     total = f.readlines()
     for line in total:
         words = line.split()
-        X.append(words[0])
-        Y.append(words[1])
-        max_X = max(max_X, len(words[0]))
+        # add newly found name
         if words[1] not in all_Y:
             all_Y[words[1]] = len(all_Y)
+        # add to list of names associated to last name
+        if words[0] not in X:
+            X[words[0]] = []
+        X[words[0]].append( all_Y[words[1]] )
+        max_X = max(max_X, len(words[0]))
 print("Loaded data. max_X = {}, classes={}\n".format(max_X, len(all_Y)))
 
 model = Sequential([
     Dense(len(all_Y), input_dim=max_X * 26),
     Activation('relu'),
-    Dense(60),
-    Activation('relu'),
-    Dense(60),
+    Dense(len(all_Y)),
     Activation('relu'),
     Dense(len(all_Y)),
     Activation('softmax'),
@@ -74,17 +77,17 @@ model.compile(optimizer='rmsprop',
 
 def generate_training_set(model, batch_size):
     # seems that generator must be infinitely iterable.
+    keys = list(X.keys())
     while True:
         for i in range(0, int(len(X)/batch_size)):
-            raw_in = X[(i * batch_size) : ((i+1) * batch_size)]
+            raw_in = keys[(i * batch_size) : ((i+1) * batch_size)]
             enc_in = numpy.array([ encode_word(max_X, x) for x in raw_in ])
 
-            raw_out = Y[(i * batch_size) : ((i+1) * batch_size)]
-            enc_out = numpy.array([ one_hot(len(all_Y), all_Y[y]) for y in raw_out ])
+            enc_out = numpy.array([ one_hot(len(all_Y), X[x]) for x in raw_in ])
 
             #enc_in = numpy.array([encode_word(max_X, X[i])])
             #enc_out = numpy.array([one_hot(len(all_Y), all_Y[Y[i]])])
-            yield({'dense_1_input': enc_in}, {'activation_4': enc_out})
+            yield({'dense_1_input': enc_in}, {'activation_3': enc_out})
 
 # how many batches to train on (use a different value to stop earlier, for debug)
 stop_at=inf
